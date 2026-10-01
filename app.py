@@ -3,6 +3,9 @@ import pandas as pd
 import qrcode
 import io
 import requests
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 
 # ---------------------------------------------------------
@@ -50,43 +53,70 @@ st.markdown("<h1 class='main-title'>💍 SARAH WEDDING MANAGEMENT</h1>", unsafe_
 st.markdown("<p class='sub-title'>✨ Live Guest & Invitation Portal ✨</p>", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# Direct Live Google Sheet Data Sync
+# Configuration & Endpoints
 # ---------------------------------------------------------
+APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxJ2QqjTFLmgm6t4BtV8YJ1O9gAt5ZaZ8f9dTqrtRhizQapHPQz-Zoac8ds7asrU20zYA/exec"
 SHEET_ID = "10QDm5IVsvstribLVgzQG4w2dRKHh_nfq6LYm34fE5qo"
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
+
 REQUIRED_COLS = ["Guest Name", "Status", "Check-in Time", "Phone Number", "Email", "Confirmation"]
 
-@st.cache_data(ttl=5)
-def load_data():
+# Fetch live guest data directly from Google Sheets
+@st.cache_data(ttl=3)
+def fetch_live_data():
     try:
-        data = pd.read_csv(CSV_URL)
+        data = pd.read_csv(f"{CSV_URL}&t={datetime.now().timestamp()}")
         for col in REQUIRED_COLS:
             if col not in data.columns:
                 data[col] = "-"
         return data[REQUIRED_COLS]
     except Exception:
-        # Initial fallback if sheet is empty
-        return pd.DataFrame([
-            {"Guest Name": "Suzan", "Status": "Not Arrived", "Check-in Time": "-", "Phone Number": "-", "Email": "suzan@example.com", "Confirmation": "Not Attending"},
-            {"Guest Name": "Baraka", "Status": "Arrived", "Check-in Time": "2026-07-09 10:39:00", "Phone Number": "-", "Email": "baraka@example.com", "Confirmation": "Attending"},
-            {"Guest Name": "Hasnein", "Status": "Not Arrived", "Check-in Time": "-", "Phone Number": "-", "Email": "christianhaule@gmail.com", "Confirmation": "Attending"},
-            {"Guest Name": "dr sarah", "Status": "Arrived", "Check-in Time": "2026-07-10 06:45:06", "Phone Number": "-", "Email": "enigmaticthespian@gmail.com", "Confirmation": "Attending"}
-        ])
+        return pd.DataFrame(columns=REQUIRED_COLS)
 
-df = load_data()
+# Send Actual Email via Gmail SMTP
+def send_real_email(to_email, guest_name):
+    try:
+        sender_email = st.secrets["email"]["sender_email"]
+        sender_password = st.secrets["email"]["sender_password"]
+        smtp_server = st.secrets["email"].get("smtp_server", "smtp.gmail.com")
+        smtp_port = int(st.secrets["email"].get("smtp_port", 587))
 
-if "live_guest_data" not in st.session_state:
-    st.session_state.live_guest_data = df
+        msg = MIMEMultipart()
+        msg['From'] = sender_email
+        msg['To'] = to_email
+        msg['Subject'] = "💍 You're Invited: Sarah's Wedding Ceremony!"
+
+        body = f"""
+        Dear {guest_name},
+
+        You are cordially invited to Sarah's Wedding Ceremony!
+
+        Please open the portal to view your QR ticket and confirm your attendance.
+
+        Best Regards,
+        Wedding Management Team
+        """
+        msg.attach(MIMEText(body, 'plain'))
+
+        server = smtplib.SMTP(smtp_server, smtp_port)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.send_message(msg)
+        server.quit()
+        return True, "Email sent successfully!"
+    except Exception as e:
+        return False, str(e)
+
+# Load current data from Google Sheets
+df = fetch_live_data()
 
 # ---------------------------------------------------------
 # Metrics Dashboard
 # ---------------------------------------------------------
-current_df = st.session_state.live_guest_data
-
 col1, col2, col3 = st.columns(3)
-total_guests = len(current_df)
-arrived_guests = len(current_df[current_df["Status"] == "Arrived"])
-attending_guests = len(current_df[current_df["Confirmation"] == "Attending"])
+total_guests = len(df)
+arrived_guests = len(df[df["Status"] == "Arrived"]) if not df.empty else 0
+attending_guests = len(df[df["Confirmation"] == "Attending"]) if not df.empty else 0
 
 with col1:
     st.metric("Total Invited", total_guests)
@@ -113,10 +143,13 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 # ---------------------------------------------------------
 with tab1:
     st.subheader("📋 Live Guest Directory")
+    if st.button("🔄 Refresh Data from Google Sheets"):
+        st.cache_data.clear()
+        st.rerun()
+
     search_query = st.text_input("🔍 Search guest name:", "")
-    
-    filtered_df = current_df.copy()
-    if search_query:
+    filtered_df = df.copy()
+    if search_query and not filtered_df.empty:
         filtered_df = filtered_df[filtered_df["Guest Name"].astype(str).str.contains(search_query, case=False, na=False)]
         
     st.dataframe(filtered_df, use_container_width=True)
@@ -135,18 +168,19 @@ with tab2:
         
         if submit_btn:
             if new_name.strip() != "":
-                new_entry = pd.DataFrame([{
-                    "Guest Name": new_name.strip(),
-                    "Status": "Not Arrived",
-                    "Check-in Time": "-",
-                    "Phone Number": new_phone.strip() if new_phone else "-",
-                    "Email": new_email.strip() if new_email else "-",
-                    "Confirmation": "Not Attending"
-                }])
-                
-                st.session_state.live_guest_data = pd.concat([st.session_state.live_guest_data, new_entry], ignore_index=True)
-                st.success(f"🎉 {new_name} added successfully!")
-                st.rerun()
+                payload = {
+                    "action": "add_guest",
+                    "name": new_name.strip(),
+                    "phone": new_phone.strip() if new_phone else "-",
+                    "email": new_email.strip() if new_email else "-"
+                }
+                try:
+                    res = requests.post(APPS_SCRIPT_URL, json=payload)
+                    st.success(f"🎉 {new_name} added directly to your Google Sheet!")
+                    st.cache_data.clear()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed to save to Google Sheet: {e}")
             else:
                 st.error("Please enter a guest name.")
 
@@ -156,11 +190,11 @@ with tab2:
 with tab3:
     st.subheader("✉️ Send Digital Invites & RSVP Response Options")
     
-    guest_names = [g for g in current_df["Guest Name"].dropna().tolist() if str(g).strip() != ""]
+    guest_names = [g for g in df["Guest Name"].dropna().tolist() if str(g).strip() != ""] if not df.empty else []
     if guest_names:
         selected_guest_rsvp = st.selectbox("Select Guest for Invite / RSVP:", guest_names)
         
-        guest_rows = current_df[current_df["Guest Name"] == selected_guest_rsvp]
+        guest_rows = df[df["Guest Name"] == selected_guest_rsvp]
         if not guest_rows.empty:
             guest_row = guest_rows.iloc[0]
             st.write(f"**Confirmation Status:** `{guest_row.get('Confirmation', 'Not Attending')}`")
@@ -170,27 +204,47 @@ with tab3:
             c1, c2 = st.columns(2)
             with c1:
                 if st.button("👍 Mark as Attending"):
-                    st.session_state.live_guest_data.loc[st.session_state.live_guest_data["Guest Name"] == selected_guest_rsvp, "Confirmation"] = "Attending"
-                    st.success(f"Updated {selected_guest_rsvp} to Attending!")
+                    payload = {
+                        "action": "update_rsvp",
+                        "name": selected_guest_rsvp,
+                        "confirmation": "Attending"
+                    }
+                    requests.post(APPS_SCRIPT_URL, json=payload)
+                    st.success(f"Updated {selected_guest_rsvp} to Attending in Google Sheets!")
+                    st.cache_data.clear()
                     st.rerun()
                     
             with c2:
                 if st.button("👎 Mark as Not Attending"):
-                    st.session_state.live_guest_data.loc[st.session_state.live_guest_data["Guest Name"] == selected_guest_rsvp, "Confirmation"] = "Not Attending"
-                    st.error(f"Updated {selected_guest_rsvp} to Not Attending.")
+                    payload = {
+                        "action": "update_rsvp",
+                        "name": selected_guest_rsvp,
+                        "confirmation": "Not Attending"
+                    }
+                    requests.post(APPS_SCRIPT_URL, json=payload)
+                    st.error(f"Updated {selected_guest_rsvp} to Not Attending in Google Sheets.")
+                    st.cache_data.clear()
                     st.rerun()
 
-        st.markdown("---")
-        if st.button("🚀 Send Digital Invites"):
-            st.info("Dispatching email invitations with RSVP buttons...")
-            st.success("Invites successfully dispatched!")
+            st.markdown("---")
+            guest_email = guest_row.get('Email', '-')
+            
+            if st.button("🚀 Send Email Invitation"):
+                if guest_email and guest_email != "-":
+                    success, msg = send_real_email(guest_email, selected_guest_rsvp)
+                    if success:
+                        st.success(f"Email successfully sent to {guest_email}!")
+                    else:
+                        st.error(f"Email failed to send. Check Streamlit Secrets. Error: {msg}")
+                else:
+                    st.error("This guest does not have a valid email address listed.")
 
 # ---------------------------------------------------------
 # TAB 4: QR Code Tickets
 # ---------------------------------------------------------
 with tab4:
     st.subheader("🎟️ Generate Guest QR Ticket")
-    guest_names = [g for g in current_df["Guest Name"].dropna().tolist() if str(g).strip() != ""]
+    guest_names = [g for g in df["Guest Name"].dropna().tolist() if str(g).strip() != ""] if not df.empty else []
     if guest_names:
         selected_guest = st.selectbox("Select guest:", guest_names, key="qr_select")
         if selected_guest:
