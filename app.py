@@ -8,6 +8,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 import urllib.parse
+import time
 
 # ---------------------------------------------------------
 # Page Configuration & Styling
@@ -73,7 +74,7 @@ def fetch_live_data():
     except Exception:
         return pd.DataFrame(columns=REQUIRED_COLS)
 
-# Send Styled HTML Email with Interactive RSVP Buttons
+# Single Email Dispatcher
 def send_real_email(to_email, guest_name):
     try:
         sender_email = st.secrets["email"]["sender_email"]
@@ -101,10 +102,10 @@ def send_real_email(to_email, guest_name):
               </p>
               
               <div style="margin: 30px 0;">
-                <a href="{attend_url}" target="_blank" style="background-color: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block; margin-right: 10px;">
+                <a href="{attend_url}" target="_blank" style="background-color: #28a745; color: white; padding: 12px 22px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block; margin-right: 10px;">
                   ✓ Will Attend
                 </a>
-                <a href="{decline_url}" target="_blank" style="background-color: #dc3545; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+                <a href="{decline_url}" target="_blank" style="background-color: #dc3545; color: white; padding: 12px 22px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
                   ✗ Won't Attend
                 </a>
               </div>
@@ -123,7 +124,7 @@ def send_real_email(to_email, guest_name):
         server.login(sender_email, sender_password)
         server.send_message(msg)
         server.quit()
-        return True, "Email sent successfully!"
+        return True, "Success"
     except Exception as e:
         return False, str(e)
 
@@ -198,12 +199,55 @@ with tab2:
             else:
                 st.error("Please enter a guest name.")
 
-# TAB 3: Send Invites & Manual RSVP
+# TAB 3: Send Digital Invites & Bulk Sending
 with tab3:
-    st.subheader("✉️ Send Digital Invites & RSVP")
+    st.subheader("✉️ Send Digital Invites & RSVP Management")
+    
+    # BULK SEND SECTION
+    st.markdown("### 📢 Bulk Email Dispatcher")
+    st.info("Send invitation emails to all guests on your list with valid email addresses simultaneously.")
+    
+    if st.button("📩 Send Invites to ALL Guests At Once"):
+        if df.empty:
+            st.warning("Guest list is currently empty.")
+        else:
+            success_count = 0
+            fail_count = 0
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            valid_guests = df[df["Email"].str.contains("@", na=False)]
+            total_valid = len(valid_guests)
+            
+            if total_valid == 0:
+                st.error("No guests found with valid email addresses.")
+            else:
+                for idx, row in valid_guests.reset_index().iterrows():
+                    g_name = row["Guest Name"]
+                    g_email = row["Email"]
+                    
+                    status_text.text(f"Sending invitation to {g_name} ({g_email})...")
+                    ok, msg = send_real_email(g_email, g_name)
+                    
+                    if ok:
+                        success_count += 1
+                    else:
+                        fail_count += 1
+                    
+                    progress_bar.progress((idx + 1) / total_valid)
+                    time.sleep(0.5)
+                
+                status_text.empty()
+                progress_bar.empty()
+                st.success(f"🎉 Batch execution complete! Successfully sent: {success_count} emails. (Failed: {fail_count})")
+
+    st.markdown("---")
+    
+    # SINGLE GUEST RSVP & INVITE SECTION
+    st.markdown("### 👤 Individual Guest Options")
     guest_names = [g for g in df["Guest Name"].dropna().tolist() if str(g).strip() != ""] if not df.empty else []
     if guest_names:
-        selected_guest_rsvp = st.selectbox("Select Guest for Invite / RSVP:", guest_names)
+        selected_guest_rsvp = st.selectbox("Select Guest for Single Invite / RSVP:", guest_names)
         guest_rows = df[df["Guest Name"] == selected_guest_rsvp]
         if not guest_rows.empty:
             guest_row = guest_rows.iloc[0]
@@ -227,7 +271,7 @@ with tab3:
 
             st.markdown("---")
             guest_email = guest_row.get('Email', '-')
-            if st.button("🚀 Send Email Invitation"):
+            if st.button("🚀 Send Single Email Invitation"):
                 if guest_email and guest_email != "-":
                     success, msg = send_real_email(guest_email, selected_guest_rsvp)
                     if success:
