@@ -7,6 +7,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
+import urllib.parse
 
 # ---------------------------------------------------------
 # Page Configuration & Styling
@@ -61,8 +62,7 @@ CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
 
 REQUIRED_COLS = ["Guest Name", "Status", "Check-in Time", "Phone Number", "Email", "Confirmation"]
 
-# Fetch live guest data directly from Google Sheets
-@st.cache_data(ttl=3)
+@st.cache_data(ttl=2)
 def fetch_live_data():
     try:
         data = pd.read_csv(f"{CSV_URL}&t={datetime.now().timestamp()}")
@@ -73,7 +73,7 @@ def fetch_live_data():
     except Exception:
         return pd.DataFrame(columns=REQUIRED_COLS)
 
-# Send Actual Email via Gmail SMTP
+# Send Styled HTML Email with Interactive RSVP Buttons
 def send_real_email(to_email, guest_name):
     try:
         sender_email = st.secrets["email"]["sender_email"]
@@ -81,22 +81,42 @@ def send_real_email(to_email, guest_name):
         smtp_server = st.secrets["email"].get("smtp_server", "smtp.gmail.com")
         smtp_port = int(st.secrets["email"].get("smtp_port", 587))
 
-        msg = MIMEMultipart()
+        encoded_name = urllib.parse.quote(guest_name)
+        attend_url = f"{APPS_SCRIPT_URL}?action=rsvp&name={encoded_name}&status=Attending"
+        decline_url = f"{APPS_SCRIPT_URL}?action=rsvp&name={encoded_name}&status=Not%20Attending"
+
+        msg = MIMEMultipart('alternative')
         msg['From'] = sender_email
         msg['To'] = to_email
         msg['Subject'] = "💍 You're Invited: Sarah's Wedding Ceremony!"
 
-        body = f"""
-        Dear {guest_name},
-
-        You are cordially invited to Sarah's Wedding Ceremony!
-
-        Please open the portal to view your QR ticket and confirm your attendance.
-
-        Best Regards,
-        Wedding Management Team
+        html_content = f"""
+        <html>
+          <body style="font-family: Arial, sans-serif; background-color: #f9f9f9; padding: 20px; margin: 0;">
+            <div style="max-width: 500px; margin: 0 auto; background: #ffffff; padding: 30px; border-radius: 12px; border: 1px solid #e0e0e0; text-align: center;">
+              <h1 style="color: #8B0032; margin-bottom: 10px;">Sarah's Wedding Ceremony</h1>
+              <p style="font-size: 16px; color: #333333;">Dear <strong>{guest_name}</strong>,</p>
+              <p style="font-size: 15px; color: #555555; line-height: 1.5;">
+                You are cordially invited to celebrate Sarah's Wedding Ceremony with us! Please let us know if you will be attending by clicking below:
+              </p>
+              
+              <div style="margin: 30px 0;">
+                <a href="{attend_url}" target="_blank" style="background-color: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block; margin-right: 10px;">
+                  ✓ Will Attend
+                </a>
+                <a href="{decline_url}" target="_blank" style="background-color: #dc3545; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+                  ✗ Won't Attend
+                </a>
+              </div>
+              
+              <p style="font-size: 13px; color: #888888;">Clicking "Will Attend" will display your official event QR entry ticket.</p>
+              <hr style="border: none; border-top: 1px solid #eeeeee; margin-top: 25px;">
+              <p style="font-size: 12px; color: #aaaaaa;">Wedding Management Team</p>
+            </div>
+          </body>
+        </html>
         """
-        msg.attach(MIMEText(body, 'plain'))
+        msg.attach(MIMEText(html_content, 'html'))
 
         server = smtplib.SMTP(smtp_server, smtp_port)
         server.starttls()
@@ -107,7 +127,6 @@ def send_real_email(to_email, guest_name):
     except Exception as e:
         return False, str(e)
 
-# Load current data from Google Sheets
 df = fetch_live_data()
 
 # ---------------------------------------------------------
@@ -138,12 +157,10 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📷 Scan QR Ticket"
 ])
 
-# ---------------------------------------------------------
 # TAB 1: Live Directory
-# ---------------------------------------------------------
 with tab1:
     st.subheader("📋 Live Guest Directory")
-    if st.button("🔄 Refresh Data from Google Sheets"):
+    if st.button("🔄 Refresh Data"):
         st.cache_data.clear()
         st.rerun()
 
@@ -154,12 +171,9 @@ with tab1:
         
     st.dataframe(filtered_df, use_container_width=True)
 
-# ---------------------------------------------------------
 # TAB 2: Add New Guest
-# ---------------------------------------------------------
 with tab2:
     st.subheader("➕ Add New Guest")
-    
     with st.form("add_guest_form", clear_on_submit=True):
         new_name = st.text_input("Guest Name*")
         new_phone = st.text_input("Phone Number")
@@ -175,73 +189,55 @@ with tab2:
                     "email": new_email.strip() if new_email else "-"
                 }
                 try:
-                    res = requests.post(APPS_SCRIPT_URL, json=payload)
-                    st.success(f"🎉 {new_name} added directly to your Google Sheet!")
+                    requests.post(APPS_SCRIPT_URL, json=payload)
+                    st.success(f"🎉 {new_name} added successfully!")
                     st.cache_data.clear()
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Failed to save to Google Sheet: {e}")
+                    st.error(f"Failed to save guest: {e}")
             else:
                 st.error("Please enter a guest name.")
 
-# ---------------------------------------------------------
-# TAB 3: Send Digital Invites & RSVP Options
-# ---------------------------------------------------------
+# TAB 3: Send Invites & Manual RSVP
 with tab3:
-    st.subheader("✉️ Send Digital Invites & RSVP Response Options")
-    
+    st.subheader("✉️ Send Digital Invites & RSVP")
     guest_names = [g for g in df["Guest Name"].dropna().tolist() if str(g).strip() != ""] if not df.empty else []
     if guest_names:
         selected_guest_rsvp = st.selectbox("Select Guest for Invite / RSVP:", guest_names)
-        
         guest_rows = df[df["Guest Name"] == selected_guest_rsvp]
         if not guest_rows.empty:
             guest_row = guest_rows.iloc[0]
-            st.write(f"**Confirmation Status:** `{guest_row.get('Confirmation', 'Not Attending')}`")
+            st.write(f"**Confirmation Status:** `{guest_row.get('Confirmation', 'Pending')}`")
             st.write(f"**Phone Number:** `{guest_row.get('Phone Number', '-')}`")
             st.write(f"**Email Address:** `{guest_row.get('Email', '-')}`")
             
             c1, c2 = st.columns(2)
             with c1:
                 if st.button("👍 Mark as Attending"):
-                    payload = {
-                        "action": "update_rsvp",
-                        "name": selected_guest_rsvp,
-                        "confirmation": "Attending"
-                    }
-                    requests.post(APPS_SCRIPT_URL, json=payload)
-                    st.success(f"Updated {selected_guest_rsvp} to Attending in Google Sheets!")
+                    requests.post(APPS_SCRIPT_URL, json={"action": "update_rsvp", "name": selected_guest_rsvp, "confirmation": "Attending"})
+                    st.success("Updated to Attending!")
                     st.cache_data.clear()
                     st.rerun()
-                    
             with c2:
                 if st.button("👎 Mark as Not Attending"):
-                    payload = {
-                        "action": "update_rsvp",
-                        "name": selected_guest_rsvp,
-                        "confirmation": "Not Attending"
-                    }
-                    requests.post(APPS_SCRIPT_URL, json=payload)
-                    st.error(f"Updated {selected_guest_rsvp} to Not Attending in Google Sheets.")
+                    requests.post(APPS_SCRIPT_URL, json={"action": "update_rsvp", "name": selected_guest_rsvp, "confirmation": "Not Attending"})
+                    st.error("Updated to Not Attending.")
                     st.cache_data.clear()
                     st.rerun()
 
             st.markdown("---")
             guest_email = guest_row.get('Email', '-')
-            
             if st.button("🚀 Send Email Invitation"):
                 if guest_email and guest_email != "-":
                     success, msg = send_real_email(guest_email, selected_guest_rsvp)
                     if success:
-                        st.success(f"Email successfully sent to {guest_email}!")
+                        st.success(f"Invitation sent to {guest_email}!")
                     else:
-                        st.error(f"Email failed to send. Check Streamlit Secrets. Error: {msg}")
+                        st.error(f"Failed to send: {msg}")
                 else:
-                    st.error("This guest does not have a valid email address listed.")
+                    st.error("Please enter a valid email address for this guest.")
 
-# ---------------------------------------------------------
 # TAB 4: QR Code Tickets
-# ---------------------------------------------------------
 with tab4:
     st.subheader("🎟️ Generate Guest QR Ticket")
     guest_names = [g for g in df["Guest Name"].dropna().tolist() if str(g).strip() != ""] if not df.empty else []
@@ -257,9 +253,7 @@ with tab4:
             img.save(buf, format="PNG")
             st.image(buf.getvalue(), caption=f"Ticket for {selected_guest}", width=250)
 
-# ---------------------------------------------------------
 # TAB 5: Scan Ticket
-# ---------------------------------------------------------
 with tab5:
     st.subheader("📷 Scan Ticket QR Code")
     camera_photo = st.camera_input("Scan Ticket")
