@@ -51,6 +51,39 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# ---------------------------------------------------------
+# Handle Landing Page from Email Clicks (Image 3 View)
+# ---------------------------------------------------------
+query_params = st.query_params
+if "guest" in query_params and "rsvp" in query_params:
+    guest_name_param = query_params["guest"]
+    rsvp_param = query_params["rsvp"]
+    
+    st.markdown("<h1 style='text-align: center;'>✨ Response Recorded! ✨</h1>", unsafe_allow_html=True)
+    st.balloons()
+    
+    if rsvp_param == "Attending":
+        st.success(f"🎉 **Thank you, {guest_name_param}!**\n\nYour response has been recorded as **Attending**.")
+        st.markdown("---")
+        st.subheader("🎟️ Your Official Entry QR Ticket")
+        
+        qr = qrcode.QRCode(version=1, box_size=8, border=2)
+        qr.add_data(f"WEDDING_TICKET:{guest_name_param}")
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="#8B0032", back_color="white")
+        
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        st.image(buf.getvalue(), caption=f"Entry Ticket for {guest_name_param}", width=250)
+        st.info("Please screenshot or save this QR code to present at the event entrance.")
+    else:
+        st.warning(f"Thank you, **{guest_name_param}**. Your response has been recorded as **Not Attending**. We appreciate your warm wishes!")
+        
+    st.stop()
+
+# ---------------------------------------------------------
+# Main App Header
+# ---------------------------------------------------------
 st.markdown("<h1 class='main-title'>💍 SARAH WEDDING MANAGEMENT</h1>", unsafe_allow_html=True)
 st.markdown("<p class='sub-title'>✨ Live Guest & Invitation Portal ✨</p>", unsafe_allow_html=True)
 
@@ -74,7 +107,6 @@ def fetch_live_data():
     except Exception:
         return pd.DataFrame(columns=REQUIRED_COLS)
 
-# Single Email Dispatcher
 def send_real_email(to_email, guest_name):
     try:
         sender_email = st.secrets["email"]["sender_email"]
@@ -93,26 +125,27 @@ def send_real_email(to_email, guest_name):
 
         html_content = f"""
         <html>
-          <body style="font-family: Arial, sans-serif; background-color: #f9f9f9; padding: 20px; margin: 0;">
-            <div style="max-width: 500px; margin: 0 auto; background: #ffffff; padding: 30px; border-radius: 12px; border: 1px solid #e0e0e0; text-align: center;">
-              <h1 style="color: #8B0032; margin-bottom: 10px;">Sarah's Wedding Ceremony</h1>
-              <p style="font-size: 16px; color: #333333;">Dear <strong>{guest_name}</strong>,</p>
-              <p style="font-size: 15px; color: #555555; line-height: 1.5;">
-                You are cordially invited to celebrate Sarah's Wedding Ceremony with us! Please let us know if you will be attending by clicking below:
+          <body style="font-family: Arial, sans-serif; background-color: #2b2b2b; padding: 20px; margin: 0;">
+            <div style="max-width: 450px; margin: 0 auto; background: #1e1e1e; padding: 30px; border-radius: 12px; border: 1px solid #333; text-align: center; color: #ffffff;">
+              <h1 style="color: #f7a8b8; margin-bottom: 10px;">Sarah's Wedding Ceremony</h1>
+              <p style="font-size: 16px; color: #dddddd;">Dear <strong>{guest_name}</strong>,</p>
+              <p style="font-size: 14px; color: #bbbbbb; line-height: 1.5;">
+                You are cordially invited to celebrate Sarah's Wedding Ceremony with us!<br>
+                Please let us know if you will be attending by clicking below:
               </p>
               
-              <div style="margin: 30px 0;">
-                <a href="{attend_url}" target="_blank" style="background-color: #28a745; color: white; padding: 12px 22px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block; margin-right: 10px;">
+              <div style="margin: 25px 0;">
+                <a href="{attend_url}" target="_blank" style="background-color: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: block; margin-bottom: 10px;">
                   ✓ Will Attend
                 </a>
-                <a href="{decline_url}" target="_blank" style="background-color: #dc3545; color: white; padding: 12px 22px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+                <a href="{decline_url}" target="_blank" style="background-color: #e65c65; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: block;">
                   ✗ Won't Attend
                 </a>
               </div>
               
-              <p style="font-size: 13px; color: #888888;">Clicking "Will Attend" will display your official event QR entry ticket.</p>
-              <hr style="border: none; border-top: 1px solid #eeeeee; margin-top: 25px;">
-              <p style="font-size: 12px; color: #aaaaaa;">Wedding Management Team</p>
+              <p style="font-size: 12px; color: #888888;">Clicking "Will Attend" will display your official event QR entry ticket.</p>
+              <hr style="border: none; border-top: 1px solid #333333; margin-top: 25px;">
+              <p style="font-size: 12px; color: #777777;">Wedding Management Team</p>
             </div>
           </body>
         </html>
@@ -199,14 +232,11 @@ with tab2:
             else:
                 st.error("Please enter a guest name.")
 
-# TAB 3: Send Digital Invites & Bulk Sending
+# TAB 3: Send Invites & RSVP
 with tab3:
     st.subheader("✉️ Send Digital Invites & RSVP Management")
     
-    # BULK SEND SECTION
     st.markdown("### 📢 Bulk Email Dispatcher")
-    st.info("Send invitation emails to all guests on your list with valid email addresses simultaneously.")
-    
     if st.button("📩 Send Invites to ALL Guests At Once"):
         if df.empty:
             st.warning("Guest list is currently empty.")
@@ -239,11 +269,10 @@ with tab3:
                 
                 status_text.empty()
                 progress_bar.empty()
-                st.success(f"🎉 Batch execution complete! Successfully sent: {success_count} emails. (Failed: {fail_count})")
+                st.success(f"🎉 Batch complete! Sent {success_count} emails successfully.")
 
     st.markdown("---")
     
-    # SINGLE GUEST RSVP & INVITE SECTION
     st.markdown("### 👤 Individual Guest Options")
     guest_names = [g for g in df["Guest Name"].dropna().tolist() if str(g).strip() != ""] if not df.empty else []
     if guest_names:
