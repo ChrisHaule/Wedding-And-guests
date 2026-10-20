@@ -52,34 +52,49 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxJ2QqjTFLmgm6t4BtV8YJ1O9gAt5ZaZ8f9dTqrtRhizQapHPQz-Zoac8ds7asrU20zYA/exec"
+REQUIRED_COLS = ["Guest Name", "Status", "Check-in Time", "Phone Number", "Email", "Confirmation"]
+
 # ---------------------------------------------------------
-# Handle Landing Page from Email RSVP Clicks
+# Handle Native Streamlit Guest Landing Page (From Email Clicks)
 # ---------------------------------------------------------
 query_params = st.query_params
 if "guest" in query_params and "rsvp" in query_params:
     guest_name_param = query_params["guest"]
     rsvp_param = query_params["rsvp"]
     
+    # Automatically update Google Sheet in the background
+    try:
+        requests.post(APPS_SCRIPT_URL, json={
+            "action": "update_rsvp", 
+            "name": guest_name_param, 
+            "confirmation": rsvp_param
+        }, timeout=5)
+    except Exception:
+        pass
+    
     st.markdown("<h1 style='text-align: center;'>✨ Response Recorded! ✨</h1>", unsafe_allow_html=True)
     st.balloons()
     
-    if rsvp_param == "Attending":
-        st.success(f"🎉 **Thank you, {guest_name_param}!**\n\nYour response has been recorded as **Attending**.")
-        st.markdown("---")
-        st.subheader("🎟️ Your Official Entry QR Ticket")
-        
-        qr = qrcode.QRCode(version=1, box_size=8, border=2)
-        qr.add_data(f"WEDDING_TICKET:{guest_name_param}")
-        qr.make(fit=True)
-        img = qr.make_image(fill_color="#8B0032", back_color="white")
-        
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        st.image(buf.getvalue(), caption=f"Entry Ticket for {guest_name_param}", width=250)
-        st.info("Please screenshot or save this QR code to present at the event entrance.")
-    else:
-        st.warning(f"Thank you, **{guest_name_param}**. Your response has been recorded as **Not Attending**. We appreciate your warm wishes!")
-        
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if rsvp_param == "Attending":
+            st.success(f"🎉 **Thank you, {guest_name_param}!**\n\nYour response has been recorded as **Attending**.")
+            st.markdown("---")
+            st.subheader("🎟️ Your Official Entry QR Ticket")
+            
+            qr = qrcode.QRCode(version=1, box_size=8, border=2)
+            qr.add_data(f"WEDDING_TICKET:{guest_name_param}")
+            qr.make(fit=True)
+            img = qr.make_image(fill_color="#8B0032", back_color="white")
+            
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            st.image(buf.getvalue(), caption=f"Entry Ticket for {guest_name_param}", width=280)
+            st.info("📌 Please screenshot or save this QR code to present at the event entrance.")
+        else:
+            st.warning(f"Thank you, **{guest_name_param}**. Your response has been recorded as **Not Attending**. We appreciate your warm wishes!")
+            
     st.stop()
 
 # ---------------------------------------------------------
@@ -87,9 +102,6 @@ if "guest" in query_params and "rsvp" in query_params:
 # ---------------------------------------------------------
 st.markdown("<h1 class='main-title'>💍 SARAH WEDDING MANAGEMENT</h1>", unsafe_allow_html=True)
 st.markdown("<p class='sub-title'>✨ Live Guest & Invitation Portal ✨</p>", unsafe_allow_html=True)
-
-APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxJ2QqjTFLmgm6t4BtV8YJ1O9gAt5ZaZ8f9dTqrtRhizQapHPQz-Zoac8ds7asrU20zYA/exec"
-REQUIRED_COLS = ["Guest Name", "Status", "Check-in Time", "Phone Number", "Email", "Confirmation"]
 
 def fetch_live_data():
     try:
@@ -106,7 +118,7 @@ def fetch_live_data():
     except Exception:
         return pd.DataFrame(columns=REQUIRED_COLS)
 
-# Robust SMTP Email Dispatcher using SSL Context
+# SMTP Email Dispatcher pointing directly to Streamlit landing links
 def send_real_email(to_email, guest_name):
     try:
         sender_email = st.secrets["email"]["sender_email"]
@@ -115,8 +127,9 @@ def send_real_email(to_email, guest_name):
         smtp_port = int(st.secrets["email"].get("smtp_port", 587))
 
         encoded_name = urllib.parse.quote(guest_name)
-        attend_url = f"{APPS_SCRIPT_URL}?action=rsvp&name={encoded_name}&status=Attending"
-        decline_url = f"{APPS_SCRIPT_URL}?action=rsvp&name={encoded_name}&status=Not%20Attending"
+        streamlit_base = "https://wedding-and-guests-llp6ontujnq4ah.streamlit.app/"
+        attend_url = f"{streamlit_base}?guest={encoded_name}&rsvp=Attending"
+        decline_url = f"{streamlit_base}?guest={encoded_name}&rsvp=Not%20Attending"
 
         msg = MIMEMultipart('alternative')
         msg['From'] = sender_email
@@ -205,7 +218,6 @@ with tab1:
         
     st.dataframe(filtered_df, use_container_width=True)
 
-    # DELETE GUEST SECTION
     st.markdown("---")
     st.subheader("🗑️ Delete Guest from Directory & Sheet")
     guest_list = [g for g in df["Guest Name"].dropna().tolist() if str(g).strip() != ""] if not df.empty else []
@@ -218,13 +230,10 @@ with tab1:
             st.write("")
             st.write("")
             if st.button("❌ Delete Guest"):
-                payload = {
-                    "action": "delete_guest",
-                    "name": guest_to_delete
-                }
+                payload = {"action": "delete_guest", "name": guest_to_delete}
                 try:
-                    res = requests.post(APPS_SCRIPT_URL, json=payload)
-                    st.success(f"🗑️ Removed {guest_to_delete} from Google Sheets and Directory!")
+                    requests.post(APPS_SCRIPT_URL, json=payload)
+                    st.success(f"🗑️ Removed {guest_to_delete}!")
                     time.sleep(1)
                     st.rerun()
                 except Exception as e:
