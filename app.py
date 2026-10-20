@@ -8,6 +8,7 @@ import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import urllib.parse
 import json
 import time
@@ -399,7 +400,9 @@ with tab5:
         if scanned_data_extracted.startswith("WEDDING_TICKET:"):
             st.session_state.last_scanned = scanned_data_extracted
             scanned_name = scanned_data_extracted.split(":", 1)[1].strip()
-            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Using East Africa Time (Dar es Salaam)
+            now_str = datetime.now(ZoneInfo("Africa/Dar_es_Salaam")).strftime("%Y-%m-%d %H:%M:%S")
             
             payload = {
                 "action": "check_in_guest",
