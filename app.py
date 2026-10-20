@@ -52,7 +52,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# Handle Landing Page from Email Clicks
+# Handle Landing Page from Email RSVP Clicks
 # ---------------------------------------------------------
 query_params = st.query_params
 if "guest" in query_params and "rsvp" in query_params:
@@ -82,28 +82,27 @@ if "guest" in query_params and "rsvp" in query_params:
     st.stop()
 
 # ---------------------------------------------------------
-# Main App Header
+# Main Header
 # ---------------------------------------------------------
 st.markdown("<h1 class='main-title'>💍 SARAH WEDDING MANAGEMENT</h1>", unsafe_allow_html=True)
 st.markdown("<p class='sub-title'>✨ Live Guest & Invitation Portal ✨</p>", unsafe_allow_html=True)
 
-# ---------------------------------------------------------
-# Configuration & Endpoints
-# ---------------------------------------------------------
 APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxJ2QqjTFLmgm6t4BtV8YJ1O9gAt5ZaZ8f9dTqrtRhizQapHPQz-Zoac8ds7asrU20zYA/exec"
-SHEET_ID = "10QDm5IVsvstribLVgzQG4w2dRKHh_nfq6LYm34fE5qo"
-CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
-
 REQUIRED_COLS = ["Guest Name", "Status", "Check-in Time", "Phone Number", "Email", "Confirmation"]
 
-@st.cache_data(ttl=2)
+# Direct JSON fetch from Apps Script without stale caching
 def fetch_live_data():
     try:
-        data = pd.read_csv(f"{CSV_URL}&t={datetime.now().timestamp()}")
-        for col in REQUIRED_COLS:
-            if col not in data.columns:
-                data[col] = "-"
-        return data[REQUIRED_COLS]
+        response = requests.get(APPS_SCRIPT_URL, timeout=10)
+        if response.status_code == 200:
+            raw_data = response.json()
+            if len(raw_data) > 1:
+                df_data = pd.DataFrame(raw_data[1:], columns=raw_data[0])
+                for col in REQUIRED_COLS:
+                    if col not in df_data.columns:
+                        df_data[col] = "-"
+                return df_data[REQUIRED_COLS]
+        return pd.DataFrame(columns=REQUIRED_COLS)
     except Exception:
         return pd.DataFrame(columns=REQUIRED_COLS)
 
@@ -194,12 +193,8 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 # TAB 1: Live Directory
 with tab1:
     st.subheader("📋 Live Guest Directory")
-    
-    col_ref, col_del = st.columns([1, 2])
-    with col_ref:
-        if st.button("🔄 Refresh Data"):
-            st.cache_data.clear()
-            st.rerun()
+    if st.button("🔄 Refresh Data"):
+        st.rerun()
 
     search_query = st.text_input("🔍 Search guest name:", "")
     filtered_df = df.copy()
@@ -218,7 +213,7 @@ with tab1:
         with col_select:
             guest_to_delete = st.selectbox("Select Guest to Remove:", guest_list, key="delete_select")
         with col_btn:
-            st.write("") # Spacer
+            st.write("")
             st.write("")
             if st.button("❌ Delete Guest"):
                 payload = {
@@ -228,7 +223,7 @@ with tab1:
                 try:
                     res = requests.post(APPS_SCRIPT_URL, json=payload)
                     st.success(f"🗑️ Removed {guest_to_delete} from Google Sheets and Directory!")
-                    st.cache_data.clear()
+                    time.sleep(1)
                     st.rerun()
                 except Exception as e:
                     st.error(f"Failed to delete guest: {e}")
@@ -255,14 +250,14 @@ with tab2:
                 try:
                     requests.post(APPS_SCRIPT_URL, json=payload)
                     st.success(f"🎉 {new_name} added successfully!")
-                    st.cache_data.clear()
+                    time.sleep(1)
                     st.rerun()
                 except Exception as e:
                     st.error(f"Failed to save guest: {e}")
             else:
                 st.error("Please enter a guest name.")
 
-# TAB 3: Send Invites & RSVP
+# TAB 3: Send Invites & Bulk Dispatch
 with tab3:
     st.subheader("✉️ Send Digital Invites & RSVP Management")
     
@@ -302,7 +297,6 @@ with tab3:
                 st.success(f"🎉 Batch complete! Sent {success_count} emails successfully.")
 
     st.markdown("---")
-    
     st.markdown("### 👤 Individual Guest Options")
     guest_names = [g for g in df["Guest Name"].dropna().tolist() if str(g).strip() != ""] if not df.empty else []
     if guest_names:
@@ -319,13 +313,13 @@ with tab3:
                 if st.button("👍 Mark as Attending"):
                     requests.post(APPS_SCRIPT_URL, json={"action": "update_rsvp", "name": selected_guest_rsvp, "confirmation": "Attending"})
                     st.success("Updated to Attending!")
-                    st.cache_data.clear()
+                    time.sleep(1)
                     st.rerun()
             with c2:
                 if st.button("👎 Mark as Not Attending"):
                     requests.post(APPS_SCRIPT_URL, json={"action": "update_rsvp", "name": selected_guest_rsvp, "confirmation": "Not Attending"})
                     st.error("Updated to Not Attending.")
-                    st.cache_data.clear()
+                    time.sleep(1)
                     st.rerun()
 
             st.markdown("---")
