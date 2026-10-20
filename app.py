@@ -3,7 +3,12 @@ import pandas as pd
 import qrcode
 import io
 import requests
+import smtplib
+import ssl
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime
+import urllib.parse
 import time
 
 # ---------------------------------------------------------
@@ -101,19 +106,59 @@ def fetch_live_data():
     except Exception:
         return pd.DataFrame(columns=REQUIRED_COLS)
 
-# Send Email via Google Apps Script Backend (Bypasses Streamlit port restrictions)
-def send_email_via_script(to_email, guest_name):
+# Robust SMTP Email Dispatcher using SSL Context
+def send_real_email(to_email, guest_name):
     try:
-        payload = {
-            "action": "send_email",
-            "email": to_email,
-            "name": guest_name
-        }
-        res = requests.post(APPS_SCRIPT_URL, json=payload, timeout=15)
-        if "Success" in res.text:
-            return True, "Success"
-        else:
-            return False, res.text
+        sender_email = st.secrets["email"]["sender_email"]
+        sender_password = st.secrets["email"]["sender_password"]
+        smtp_server = st.secrets["email"].get("smtp_server", "smtp.gmail.com")
+        smtp_port = int(st.secrets["email"].get("smtp_port", 587))
+
+        encoded_name = urllib.parse.quote(guest_name)
+        attend_url = f"{APPS_SCRIPT_URL}?action=rsvp&name={encoded_name}&status=Attending"
+        decline_url = f"{APPS_SCRIPT_URL}?action=rsvp&name={encoded_name}&status=Not%20Attending"
+
+        msg = MIMEMultipart('alternative')
+        msg['From'] = sender_email
+        msg['To'] = to_email
+        msg['Subject'] = "💍 You're Invited: Sarah's Wedding Ceremony!"
+
+        html_content = f"""
+        <html>
+          <body style="font-family: Arial, sans-serif; background-color: #2b2b2b; padding: 20px; margin: 0;">
+            <div style="max-width: 450px; margin: 0 auto; background: #1e1e1e; padding: 30px; border-radius: 12px; border: 1px solid #333; text-align: center; color: #ffffff;">
+              <h1 style="color: #f7a8b8; margin-bottom: 10px;">Sarah's Wedding Ceremony</h1>
+              <p style="font-size: 16px; color: #dddddd;">Dear <strong>{guest_name}</strong>,</p>
+              <p style="font-size: 14px; color: #bbbbbb; line-height: 1.5;">
+                You are cordially invited to celebrate Sarah's Wedding Ceremony with us!<br>
+                Please let us know if you will be attending by clicking below:
+              </p>
+              
+              <div style="margin: 25px 0;">
+                <a href="{attend_url}" target="_blank" style="background-color: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: block; margin-bottom: 10px;">
+                  ✓ Will Attend
+                </a>
+                <a href="{decline_url}" target="_blank" style="background-color: #e65c65; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: block;">
+                  ✗ Won't Attend
+                </a>
+              </div>
+              
+              <p style="font-size: 12px; color: #888888;">Clicking "Will Attend" will display your official event QR entry ticket.</p>
+              <hr style="border: none; border-top: 1px solid #333333; margin-top: 25px;">
+              <p style="font-size: 12px; color: #777777;">Wedding Management Team</p>
+            </div>
+          </body>
+        </html>
+        """
+        msg.attach(MIMEText(html_content, 'html'))
+
+        context = ssl.create_default_context()
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls(context=context)
+            server.login(sender_email, sender_password)
+            server.sendmail(sender_email, to_email, msg.as_string())
+            
+        return True, "Success"
     except Exception as e:
         return False, str(e)
 
@@ -178,7 +223,7 @@ with tab1:
                     "name": guest_to_delete
                 }
                 try:
-                    requests.post(APPS_SCRIPT_URL, json=payload)
+                    res = requests.post(APPS_SCRIPT_URL, json=payload)
                     st.success(f"🗑️ Removed {guest_to_delete} from Google Sheets and Directory!")
                     time.sleep(1)
                     st.rerun()
@@ -239,7 +284,7 @@ with tab3:
                     g_email = row["Email"]
                     
                     status_text.text(f"Sending invitation to {g_name} ({g_email})...")
-                    ok, msg = send_email_via_script(g_email, g_name)
+                    ok, msg = send_real_email(g_email, g_name)
                     
                     if ok:
                         success_count += 1
@@ -283,7 +328,7 @@ with tab3:
             guest_email = guest_row.get('Email', '-')
             if st.button("🚀 Send Single Email Invitation"):
                 if guest_email and guest_email != "-":
-                    success, msg = send_email_via_script(guest_email, selected_guest_rsvp)
+                    success, msg = send_real_email(guest_email, selected_guest_rsvp)
                     if success:
                         st.success(f"Invitation sent to {guest_email}!")
                     else:
