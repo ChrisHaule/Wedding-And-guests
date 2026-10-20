@@ -361,11 +361,14 @@ with tab4:
             img.save(buf, format="PNG")
             st.image(buf.getvalue(), caption=f"Ticket for {selected_guest}", width=250)
 
-# TAB 5: Scan Ticket (Native OpenCV QR Code Detector)
+# TAB 5: Scan Ticket (Native OpenCV QR Code Detector with State Reset)
 with tab5:
     st.subheader("📷 Scan Ticket QR Code")
     st.markdown("Take a photo of the guest's QR ticket to verify entry automatically.")
     
+    if "last_scanned" not in st.session_state:
+        st.session_state.last_scanned = ""
+
     camera_photo = st.camera_input("Scan QR Code via Camera")
     
     scanned_data_extracted = ""
@@ -392,8 +395,9 @@ with tab5:
     if manual_qr_text:
         scanned_data_extracted = manual_qr_text
 
-    if scanned_data_extracted:
+    if scanned_data_extracted and scanned_data_extracted != st.session_state.last_scanned:
         if scanned_data_extracted.startswith("WEDDING_TICKET:"):
+            st.session_state.last_scanned = scanned_data_extracted
             scanned_name = scanned_data_extracted.split(":", 1)[1].strip()
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
@@ -411,7 +415,8 @@ with tab5:
                 
                 if status_type == "success":
                     st.success(f"✅ **CHECK-IN SUCCESSFUL!**\n\nWelcome to the wedding, **{scanned_name}**!\n\n🕒 Checked in at: {check_time}")
-                    time.sleep(2)
+                    time.sleep(3)
+                    st.session_state.last_scanned = ""
                     st.rerun()
                 elif status_type == "already_checked_in":
                     st.warning(f"⚠️ **ALREADY CHECKED IN!**\n\n**{scanned_name}** has already entered the venue.\n\n🕒 Original check-in time: {check_time}")
