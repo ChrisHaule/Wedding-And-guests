@@ -9,6 +9,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 import urllib.parse
+import json
 import time
 
 # ---------------------------------------------------------
@@ -63,7 +64,6 @@ if "guest" in query_params and "rsvp" in query_params:
     guest_name_param = query_params["guest"]
     rsvp_param = query_params["rsvp"]
     
-    # Automatically update Google Sheet in the background
     try:
         requests.post(APPS_SCRIPT_URL, json={
             "action": "update_rsvp", 
@@ -118,7 +118,6 @@ def fetch_live_data():
     except Exception:
         return pd.DataFrame(columns=REQUIRED_COLS)
 
-# SMTP Email Dispatcher pointing directly to Streamlit landing links
 def send_real_email(to_email, guest_name):
     try:
         sender_email = st.secrets["email"]["sender_email"]
@@ -361,10 +360,50 @@ with tab4:
             img.save(buf, format="PNG")
             st.image(buf.getvalue(), caption=f"Ticket for {selected_guest}", width=250)
 
-# TAB 5: Scan Ticket
+# TAB 5: Scan Ticket (Smart Check-in & Duplicate Detection)
 with tab5:
     st.subheader("📷 Scan Ticket QR Code")
-    camera_photo = st.camera_input("Scan Ticket")
-    if camera_photo:
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        st.success(f"✅ Guest Verified & Checked In at {now_str}!")
+    st.markdown("Use your camera or enter scanned ticket text to verify guest entry.")
+    
+    scan_input = st.camera_input("Scan QR Code via Camera")
+    
+    # Fallback text input option for quick manual testing if camera scanner reads code as text
+    manual_qr_text = st.text_input("Or paste/type scanned QR ticket data (e.g. WEDDING_TICKET:chris haule):", "")
+    
+    raw_data_scanned = ""
+    if manual_qr_text:
+        raw_data_scanned = manual_qr_text
+    
+    # If camera captured an image, you can integrate pyzbar/opencv here if needed, 
+    # or rely on manual/barcode scanners which input text directly.
+    
+    if raw_data_scanned:
+        if raw_data_scanned.startswith("WEDDING_TICKET:"):
+            scanned_name = raw_data_scanned.split(":", 1)[1].strip()
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Send to Google Sheets to check-in and verify
+            payload = {
+                "action": "check_in_guest",
+                "name": scanned_name,
+                "time": now_str
+            }
+            try:
+                res = requests.post(APPS_SCRIPT_URL, json=payload, timeout=10)
+                result_data = res.json()
+                
+                status_type = result_data.get("status")
+                check_time = result_data.get("time")
+                
+                if status_type == "success":
+                    st.success(f"✅ **CHECK-IN SUCCESSFUL!**\n\nWelcome to the wedding, **{scanned_name}**!\n\n🕒 Checked in at: {check_time}")
+                    time.sleep(2)
+                    st.rerun()
+                elif status_type == "already_checked_in":
+                    st.warning(f"⚠️ **ALREADY CHECKED IN!**\n\n**{scanned_name}** has already entered the venue.\n\n🕒 Original check-in time: {check_time}")
+                else:
+                    st.error(f"❌ **GUEST NOT FOUND:** '{scanned_name}' is not in the guest list.")
+            except Exception as e:
+                st.error(f"Error communicating with Google Sheets: {e}")
+        else:
+            st.error("❌ **Invalid Ticket:** Scanned QR code does not belong to this wedding system.")
