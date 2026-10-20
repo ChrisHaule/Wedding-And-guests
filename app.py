@@ -127,7 +127,7 @@ def send_real_email(to_email, guest_name):
         smtp_port = int(st.secrets["email"].get("smtp_port", 587))
 
         encoded_name = urllib.parse.quote(guest_name)
-        streamlit_base = "https://wedding-and-guests-llp6ontujnq4ah.streamlit.app/"
+        streamlit_base = "https://wedding-and-guests-qbguhu8allp6ontujnq4ah.streamlit.app/"
         attend_url = f"{streamlit_base}?guest={encoded_name}&rsvp=Attending"
         decline_url = f"{streamlit_base}?guest={encoded_name}&rsvp=Not%20Attending"
 
