@@ -360,7 +360,7 @@ with tab4:
             img.save(buf, format="PNG")
             st.image(buf.getvalue(), caption=f"Ticket for {selected_guest}", width=250)
 
-# TAB 5: Scan Ticket (Automatic QR Image Decoding & Check-in)
+# TAB 5: Scan Ticket (Native OpenCV QR Code Detector - No Pyzbar required)
 with tab5:
     st.subheader("📷 Scan Ticket QR Code")
     st.markdown("Take a photo of the guest's QR ticket to verify entry automatically.")
@@ -372,19 +372,19 @@ with tab5:
     if camera_photo is not None:
         try:
             import cv2
-            from pyzbar.pyzbar import decode
             import numpy as np
             
             file_bytes = np.asarray(bytearray(camera_photo.read()), dtype=np.uint8)
             opencv_image = cv2.imdecode(file_bytes, 1)
             
-            decoded_objects = decode(opencv_image)
-            if decoded_objects:
-                scanned_data_extracted = decoded_objects[0].data.decode('utf-8')
+            # Use OpenCV's built-in QRCodeDetector
+            detector = cv2.QRCodeDetector()
+            data, bbox, straight_qrcode = detector.detectAndDecode(opencv_image)
+            
+            if data:
+                scanned_data_extracted = data
             else:
-                st.warning("⚠️ No QR code detected in the photo. Please ensure the QR code is clear, well-lit, and fully inside the frame.")
-        except ImportError:
-            st.error("⚠️ QR decoding libraries are installing or missing from requirements.txt.")
+                st.warning("⚠️ No QR code detected in the photo. Please make sure the QR code is fully visible, well-lit, and in focus.")
         except Exception as e:
             st.error(f"Error reading image: {e}")
 
