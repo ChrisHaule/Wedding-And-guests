@@ -53,7 +53,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxJ2QqjTFLmgm6t4BtV8YJ1O9gAt5ZaZ8f9dTqrtRhizQapHPQz-Zoac8ds7asrU20zYA/exec"
+# Updated Apps Script URL from your active deployment
+APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzVMOI_bDLKzHSTZ8TqveJpi-qiPnTXqcU5qpb5td3TRYOEZbNz8P2xKPmH60BlUe..."
 REQUIRED_COLS = ["Guest Name", "Status", "Check-in Time", "Phone Number", "Email", "Confirmation"]
 
 # ---------------------------------------------------------
@@ -360,7 +361,7 @@ with tab4:
             img.save(buf, format="PNG")
             st.image(buf.getvalue(), caption=f"Ticket for {selected_guest}", width=250)
 
-# TAB 5: Scan Ticket (Native OpenCV QR Code Detector - No Pyzbar required)
+# TAB 5: Scan Ticket (Native OpenCV QR Code Detector)
 with tab5:
     st.subheader("📷 Scan Ticket QR Code")
     st.markdown("Take a photo of the guest's QR ticket to verify entry automatically.")
@@ -377,7 +378,6 @@ with tab5:
             file_bytes = np.asarray(bytearray(camera_photo.read()), dtype=np.uint8)
             opencv_image = cv2.imdecode(file_bytes, 1)
             
-            # Use OpenCV's built-in QRCodeDetector
             detector = cv2.QRCodeDetector()
             data, bbox, straight_qrcode = detector.detectAndDecode(opencv_image)
             
