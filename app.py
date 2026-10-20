@@ -53,8 +53,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Updated Apps Script URL from your active deployment
-APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzVMOI_bDLKzHSTZ8TqveJpi-qiPnTXqcU5qpb5td3TRYOEZbNz8P2xKPmH60BlUe..."
+# Your exact verified Google Apps Script Web App URL
+APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzvMOi_bDLKzHSTZ8TqveJpi-qjPnTXqcU5qpb5tdT3RYOEZbNz8P2xKPmH60BlUe600g/exec"
 REQUIRED_COLS = ["Guest Name", "Status", "Check-in Time", "Phone Number", "Email", "Confirmation"]
 
 # ---------------------------------------------------------
