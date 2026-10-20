@@ -52,7 +52,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# Handle Landing Page from Email Clicks (Image 3 View)
+# Handle Landing Page from Email Clicks
 # ---------------------------------------------------------
 query_params = st.query_params
 if "guest" in query_params and "rsvp" in query_params:
@@ -194,9 +194,12 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 # TAB 1: Live Directory
 with tab1:
     st.subheader("📋 Live Guest Directory")
-    if st.button("🔄 Refresh Data"):
-        st.cache_data.clear()
-        st.rerun()
+    
+    col_ref, col_del = st.columns([1, 2])
+    with col_ref:
+        if st.button("🔄 Refresh Data"):
+            st.cache_data.clear()
+            st.rerun()
 
     search_query = st.text_input("🔍 Search guest name:", "")
     filtered_df = df.copy()
@@ -204,6 +207,33 @@ with tab1:
         filtered_df = filtered_df[filtered_df["Guest Name"].astype(str).str.contains(search_query, case=False, na=False)]
         
     st.dataframe(filtered_df, use_container_width=True)
+
+    # DELETE GUEST SECTION
+    st.markdown("---")
+    st.subheader("🗑️ Delete Guest from Directory & Sheet")
+    guest_list = [g for g in df["Guest Name"].dropna().tolist() if str(g).strip() != ""] if not df.empty else []
+    
+    if guest_list:
+        col_select, col_btn = st.columns([3, 1])
+        with col_select:
+            guest_to_delete = st.selectbox("Select Guest to Remove:", guest_list, key="delete_select")
+        with col_btn:
+            st.write("") # Spacer
+            st.write("")
+            if st.button("❌ Delete Guest"):
+                payload = {
+                    "action": "delete_guest",
+                    "name": guest_to_delete
+                }
+                try:
+                    res = requests.post(APPS_SCRIPT_URL, json=payload)
+                    st.success(f"🗑️ Removed {guest_to_delete} from Google Sheets and Directory!")
+                    st.cache_data.clear()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed to delete guest: {e}")
+    else:
+        st.info("No guests currently in the directory.")
 
 # TAB 2: Add New Guest
 with tab2:
