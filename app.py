@@ -90,7 +90,6 @@ st.markdown("<p class='sub-title'>✨ Live Guest & Invitation Portal ✨</p>", u
 APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxJ2QqjTFLmgm6t4BtV8YJ1O9gAt5ZaZ8f9dTqrtRhizQapHPQz-Zoac8ds7asrU20zYA/exec"
 REQUIRED_COLS = ["Guest Name", "Status", "Check-in Time", "Phone Number", "Email", "Confirmation"]
 
-# Direct JSON fetch from Apps Script without stale caching
 def fetch_live_data():
     try:
         response = requests.get(APPS_SCRIPT_URL, timeout=10)
@@ -106,12 +105,13 @@ def fetch_live_data():
     except Exception:
         return pd.DataFrame(columns=REQUIRED_COLS)
 
+# Updated Email Sending Function using SSL (Port 465)
 def send_real_email(to_email, guest_name):
     try:
         sender_email = st.secrets["email"]["sender_email"]
         sender_password = st.secrets["email"]["sender_password"]
         smtp_server = st.secrets["email"].get("smtp_server", "smtp.gmail.com")
-        smtp_port = int(st.secrets["email"].get("smtp_port", 587))
+        smtp_port = int(st.secrets["email"].get("smtp_port", 465))
 
         encoded_name = urllib.parse.quote(guest_name)
         attend_url = f"{APPS_SCRIPT_URL}?action=rsvp&name={encoded_name}&status=Attending"
@@ -151,11 +151,16 @@ def send_real_email(to_email, guest_name):
         """
         msg.attach(MIMEText(html_content, 'html'))
 
-        server = smtplib.SMTP(smtp_server, smtp_port)
-        server.starttls()
-        server.login(sender_email, sender_password)
-        server.send_message(msg)
-        server.quit()
+        if smtp_port == 465:
+            with smtplib.SMTP_SSL(smtp_server, smtp_port) as server:
+                server.login(sender_email, sender_password)
+                server.send_message(msg)
+        else:
+            with smtplib.SMTP(smtp_server, smtp_port) as server:
+                server.starttls()
+                server.login(sender_email, sender_password)
+                server.send_message(msg)
+                
         return True, "Success"
     except Exception as e:
         return False, str(e)
