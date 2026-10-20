@@ -360,29 +360,43 @@ with tab4:
             img.save(buf, format="PNG")
             st.image(buf.getvalue(), caption=f"Ticket for {selected_guest}", width=250)
 
-# TAB 5: Scan Ticket (Smart Check-in & Duplicate Detection)
+# TAB 5: Scan Ticket (Automatic QR Image Decoding & Check-in)
 with tab5:
     st.subheader("📷 Scan Ticket QR Code")
-    st.markdown("Use your camera or enter scanned ticket text to verify guest entry.")
+    st.markdown("Take a photo of the guest's QR ticket to verify entry automatically.")
     
-    scan_input = st.camera_input("Scan QR Code via Camera")
+    camera_photo = st.camera_input("Scan QR Code via Camera")
     
-    # Fallback text input option for quick manual testing if camera scanner reads code as text
-    manual_qr_text = st.text_input("Or paste/type scanned QR ticket data (e.g. WEDDING_TICKET:chris haule):", "")
+    scanned_data_extracted = ""
     
-    raw_data_scanned = ""
+    if camera_photo is not None:
+        try:
+            import cv2
+            from pyzbar.pyzbar import decode
+            import numpy as np
+            
+            file_bytes = np.asarray(bytearray(camera_photo.read()), dtype=np.uint8)
+            opencv_image = cv2.imdecode(file_bytes, 1)
+            
+            decoded_objects = decode(opencv_image)
+            if decoded_objects:
+                scanned_data_extracted = decoded_objects[0].data.decode('utf-8')
+            else:
+                st.warning("⚠️ No QR code detected in the photo. Please ensure the QR code is clear, well-lit, and fully inside the frame.")
+        except ImportError:
+            st.error("⚠️ QR decoding libraries are installing or missing from requirements.txt.")
+        except Exception as e:
+            st.error(f"Error reading image: {e}")
+
+    manual_qr_text = st.text_input("Or paste/type scanned QR ticket data manually:", "")
     if manual_qr_text:
-        raw_data_scanned = manual_qr_text
-    
-    # If camera captured an image, you can integrate pyzbar/opencv here if needed, 
-    # or rely on manual/barcode scanners which input text directly.
-    
-    if raw_data_scanned:
-        if raw_data_scanned.startswith("WEDDING_TICKET:"):
-            scanned_name = raw_data_scanned.split(":", 1)[1].strip()
+        scanned_data_extracted = manual_qr_text
+
+    if scanned_data_extracted:
+        if scanned_data_extracted.startswith("WEDDING_TICKET:"):
+            scanned_name = scanned_data_extracted.split(":", 1)[1].strip()
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
-            # Send to Google Sheets to check-in and verify
             payload = {
                 "action": "check_in_guest",
                 "name": scanned_name,
@@ -406,4 +420,4 @@ with tab5:
             except Exception as e:
                 st.error(f"Error communicating with Google Sheets: {e}")
         else:
-            st.error("❌ **Invalid Ticket:** Scanned QR code does not belong to this wedding system.")
+            st.error(f"❌ **Invalid Ticket:** '{scanned_data_extracted}' is not a valid wedding QR code.")
